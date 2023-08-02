@@ -24,6 +24,7 @@ struct Peg {
 }
 
 let SHAKE_TIME: Double = 2
+let AI_TURN_LENGTH: Double = 1
 
 struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
@@ -49,7 +50,8 @@ struct ContentView: View {
      DONE: 5) Add shake function logic
      DONE: 6) Add shadow animation to buttons: L, R, SendMsg, and PlayMove
      DONE: 7) Add shaking animation to game board
-     TODO: 8) Add a player waiting animation to VE (with randomness AI???)
+     DONE: 8) Add a player waiting animation to VE (with randomness AI???)
+     TODO: 9) Add in play move button functionality
      
      TODO: IDEA) krazy kooky AI (aka randomness AI but it can play 2-4 moves a turn)
      TODO: IDEA) strategic AI who tries to block the longest opponent path
@@ -66,14 +68,20 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     ForEach(leftButtons.indices, id: \.self) { index in
                         Button(action: {
-                            leftButtons[index] = .pressed
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                leftButtons[index] = .not_pressed
+                            if isPlayerTurn {
+                                leftButtons[index] = .pressed
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    leftButtons[index] = .not_pressed
+                                }
+                                
+                                let success = addToRow(rowIndex: index, side: .left)
+                                
+                                if success {
+                                    AITurn()
+                                }
                             }
-                            
-                            addToRow(rowIndex: index, side: .left)
                         }){
-                            CircleButtonView(buttonState: $leftButtons[index])
+                            CircleButtonView(buttonState: $leftButtons[index], isPlayerTurn: $isPlayerTurn)
                         }.buttonStyle(PlainButtonStyle())
                     }
                 }
@@ -108,14 +116,19 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     ForEach(rightButtons.indices, id: \.self) { index in
                         Button(action: {
-                            rightButtons[index] = .pressed
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                rightButtons[index] = .not_pressed
+                            if isPlayerTurn {
+                                rightButtons[index] = .pressed
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    rightButtons[index] = .not_pressed
+                                }
+                                
+                                let success = addToRow(rowIndex: index, side: .right)
+                                if success {
+                                    AITurn()
+                                }
                             }
-                            
-                            addToRow(rowIndex: index, side: .right)
                         }){
-                            CircleButtonView(buttonState: $rightButtons[index])
+                            CircleButtonView(buttonState: $rightButtons[index], isPlayerTurn: $isPlayerTurn)
                         }.buttonStyle(PlainButtonStyle())
                     }
                 }
@@ -123,30 +136,39 @@ struct ContentView: View {
             }
             
             /// Play Move Button
-            Button(action: {
-                playMoveButtonIsPressed = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    playMoveButtonIsPressed = false
+            if isPlayerTurn {
+                Button(action: {
+                    playMoveButtonIsPressed = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        playMoveButtonIsPressed = false
+                    }
+                    
+                    pressPlay()
+                }) {
+                    Text("Play Move!")
+                        .foregroundColor(.black)
+                        .font(.largeTitle)
                 }
-                
-                pressPlay()
-            }) {
-                Text("Play Move!")
-                    .foregroundColor(.black)
-                    .font(.largeTitle)
+                .padding(.horizontal)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(.shadow(.inner(color: playMoveButtonIsPressed ? .white : .black, radius: 2, x: -1, y: -1)))
+                        .foregroundColor(Color(red: playMoveButtonIsPressed ? 140/255 : 165/255, green: playMoveButtonIsPressed ? 191/255 : 216/255, blue: playMoveButtonIsPressed ? 230/255 : 1.0))
+                )
+                .edgesIgnoringSafeArea(.all)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color(red: 47/255, green: 158/255, blue: 68/255), lineWidth: 1)
+                )
             }
-            .padding(.horizontal)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(.shadow(.inner(color: playMoveButtonIsPressed ? .white : .black, radius: 2, x: -1, y: -1)))
-                    .foregroundColor(Color(red: playMoveButtonIsPressed ? 140/255 : 165/255, green: playMoveButtonIsPressed ? 191/255 : 216/255, blue: playMoveButtonIsPressed ? 230/255 : 1.0))
-            )
-            .edgesIgnoringSafeArea(.all)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color(red: 47/255, green: 158/255, blue: 68/255), lineWidth: 1)
-            )
+            else {
+                Text("Waiting for opponent...")
+                    .foregroundColor(.black)
+                    .font(.title)
+                    .padding(.horizontal)
+                    .padding(.vertical, 5)
+            }
             
             /// Board Shake Code
             HStack(spacing: 0) {
@@ -344,11 +366,11 @@ struct ContentView: View {
         }
     }
     
-    private func addToRow(rowIndex: Int, side: SIDE) {
-        addToGrid(rowIndex: rowIndex, side: side)
+    private func addToRow(rowIndex: Int, side: SIDE) -> Bool {
+        return addToGrid(rowIndex: rowIndex, side: side)
     }
     
-    private func addToGrid(rowIndex: Int, side: SIDE) {
+    private func addToGrid(rowIndex: Int, side: SIDE) -> Bool {
         var played: Bool = false
         
         switch(side) {
@@ -380,10 +402,23 @@ struct ContentView: View {
         else {
             print("Failed to add a piece!")
         }
+        
+        return played
     }
     
     private func pressPlay() {
         print("Pressed Play Move! Button")
+    }
+    
+    private func AITurn() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + AI_TURN_LENGTH) {
+            var success = false
+            while !success {
+                let randomSide: SIDE = Bool.random() ? .right : .left
+                let randomIndex = Int.random(in: 0..<7)
+                success = addToRow(rowIndex: randomIndex, side: randomSide)
+            }
+        }
     }
 }
 
@@ -395,10 +430,11 @@ struct ContentView_Previews: PreviewProvider {
 
 struct CircleButtonView: View {
     @Binding var buttonState: BUTTON_STATE
+    @Binding var isPlayerTurn: Bool
     
     var body: some View {
         Circle()
-            .fill(Color.blue
+            .fill((isPlayerTurn ? Color.blue : Color.gray)
                 .shadow(.inner(color: buttonState == .pressed ? .white : .black, radius: 2, x: -1, y: -1)))
             .frame(width: 39, height: 39)
             .padding(.vertical, 3)
@@ -438,7 +474,7 @@ struct PegView: View {
                 )
                 .padding(1)
                 .opacity((pegState == .player_played) ? 1 : 0)
-                .animation(.easeInOut(duration: isLShaking || isRShaking ? SHAKE_TIME : 0.5), value: pegState)
+                .animation(.linear(duration: (isLShaking || isRShaking) ? SHAKE_TIME : 0.5), value: pegState)
             /// Red Piece (if opponent played)
             Circle()
                 .fill(Color.red)
@@ -449,14 +485,14 @@ struct PegView: View {
                 )
                 .padding(1)
                 .opacity((pegState == .opponent_played) ? 1 : 0)
-                .animation(.easeInOut(duration: isLShaking || isRShaking ? SHAKE_TIME : 0.5), value: pegState)
+                .animation(.linear(duration: (isLShaking || isRShaking) ? SHAKE_TIME : 0.5), value: pegState)
             /// Empty Peg
             Text("・")
                 .foregroundColor(.black)
                 .font(.largeTitle)
                 .padding(.horizontal, 4)
                 .opacity((pegState == .empty) ? 1 : 0)
-                .animation(.easeInOut(duration: 0.5), value: pegState)
+                .animation(.linear(duration: 0.5), value: pegState)
         }
     }
 }
